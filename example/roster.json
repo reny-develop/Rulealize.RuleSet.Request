@@ -1,0 +1,126 @@
+{
+  "$schema": "rulealize/ruleset/v1",
+  "id": "roster",
+  "version": "1.0.0",
+
+  // A shift roster that holds `Rulealize.RuleSet.Request`, so that a shift is filled only
+  // where a request for it was raised and granted.
+  //
+  // This document is not published and does not need to be. **Its identifier is `roster`**,
+  // short and unqualified, because a document's components are resolved out of one folder —
+  // the one beside it — and a name that never leaves this repository collides with nothing.
+  // The one it holds is `Rulealize.RuleSet.Request`, and the shape of the two names in
+  // `uses` below is what says which of them is somebody else's.
+  //
+  // It exists to be read and run. `rulealize play roster.json --state roster-state.json`
+  // walks it, and the two things a holder can do to a component are both in it.
+
+  "requires": [
+    { "plugin": "Rulealize.Plugin.TypeSchema", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.State",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Comparison", "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Logic",      "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Binding",    "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Record",     "version": "^1.0" },
+    { "plugin": "Rulealize.Plugin.Sequence",   "version": "^1.0" }
+  ],
+
+  "uses": [
+    { "ruleSet": "Rulealize.RuleSet.Request", "version": "^1.0", "as": "req" }
+  ],
+
+  "state": {
+    "schema": {
+      "filled": { "op": "type.list", "element": { "op": "type.string", "minLength": 1 } }
+    },
+    "initial": { "filled": [] }
+  },
+
+  // The two things a holder may do, and there are no others.
+  "held": {
+    "req": {
+      // ── Refuse ──
+      //
+      // The guard neither document could write alone. The request half cannot see the
+      // roster, so nothing in it stops a request for a shift already filled; the roster
+      // half has never heard of a request, so nothing in it is wrong either.
+      //
+      // `@subject` is the candidate, under the name the component gave its parameter. This
+      // is asked *after* the component's own guard and may only narrow — writing `true`
+      // here would grant nothing that was not already offered.
+      "raise": {
+        "when": {
+          "op": "logic.not",
+          "value": {
+            "op": "seq.any", "source": "$filled", "as": "f",
+            "predicate": { "op": "cmp.eq", "left": "@f", "right": "@subject" }
+          }
+        }
+      },
+
+      // ── Hide ──
+      //
+      // `false` refuses everywhere, so `req.grant` is never offered as a move of its own.
+      // The only route to it is `fill` below, which is the point: granting the request and
+      // filling the shift are one decision, and offering them separately would model a
+      // process with a state between them that this one never occupies.
+      "grant": { "when": false }
+    }
+  },
+
+  "inputs": {
+    // ── Drive ──
+    //
+    // `fires` is a static list rather than an effect, so what this input sets in motion can
+    // be read off the document without running it. The fired input goes through its own rule
+    // set's guard, so this is never a way past a rule the component wrote — `req.grant`
+    // still refuses unless the request is in `review`.
+    //
+    // The component's effects run, and then this one's. Both read the state the transition
+    // found, which is why `subject` is readable here: `raise` wrote it, not `grant`.
+    "fill": {
+      "fires": [
+        { "held": "req", "input": "grant" }
+      ],
+      "effects": [
+        {
+          "op": "state.set", "path": "filled",
+          "value": {
+            "op": "seq.concat",
+            "of": [
+              "$filled",
+              { "op": "seq.of", "of": [ { "op": "rec.at", "record": "$req", "key": "subject" } ] }
+            ]
+          }
+        }
+      ]
+    }
+  },
+
+  // ── One request is one request ──
+  //
+  // A component holds one state, so holding `Request` once gives this roster one request:
+  // several shifts to choose between, one of them asked for, and the case is over when that
+  // is settled. `raise` needs `draft`, so there is no second one.
+  //
+  // A process that needs several at once holds several — `uses` may name one rule set more
+  // than once, under a different `as` each time, and each alias gets a state field of its
+  // own. A process that needs an unbounded number needs a case per request instead, which is
+  // what a component being one state is telling you.
+  //
+  // A composite reads its component's ending rather than inheriting it: `GetValidInputs`
+  // never consults a component's `terminal`, so saying when *this* is over is this
+  // document's job even where the answer is entirely about the request.
+  "terminal": {
+    "when": {
+      "op": "logic.or",
+      "any": [
+        { "op": "cmp.eq", "right": "granted",
+          "left": { "op": "rec.at", "record": "$req", "key": "stage" } },
+        { "op": "cmp.eq", "right": "denied",
+          "left": { "op": "rec.at", "record": "$req", "key": "stage" } }
+      ]
+    },
+    "result": { "op": "rec.at", "record": "$req", "key": "stage" }
+  }
+}

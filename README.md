@@ -51,7 +51,11 @@ offers no `raise`, which is the right answer for a case nobody has said anything
 | `rec.at($req, "stage")` | `draft`, `review`, `granted` or `denied` |
 | `rec.at($req, "subject")` | what was requested, or `null` before `raise` |
 
-and `held` is asked with the candidate in scope under the name this document gave it:
+and two things it may do, which are the whole of what holding a rule set is.
+[`example/roster.json`](example/roster.json) is a working document that does both.
+
+**Refuse.** `held` is asked with the candidate in scope under the name this document gave its
+parameter, so this is where a guard that spans both states is written:
 
 ```json
 "held": {
@@ -60,8 +64,8 @@ and `held` is asked with the candidate in scope under the name this document gav
       "when": {
         "op": "logic.not",
         "value": {
-          "op": "seq.any", "source": "$assigned", "as": "a",
-          "predicate": { "op": "cmp.eq", "left": "@a", "right": "@subject" }
+          "op": "seq.any", "source": "$filled", "as": "f",
+          "predicate": { "op": "cmp.eq", "left": "@f", "right": "@subject" }
         }
       }
     }
@@ -69,10 +73,54 @@ and `held` is asked with the candidate in scope under the name this document gav
 }
 ```
 
-That is the guard neither half could write alone: the request half cannot see what is already
-assigned, and the assigning half has never heard of a request. **A composite may only
-refuse** — `held` is asked after this document's own guard, so nothing written there grants a
-request that would not otherwise have been offered.
+*Do not raise a request for a shift already filled* — the guard neither half could write
+alone, because the request half cannot see the roster and the roster half has never heard of
+a request. **It may only refuse.** `held` is asked after this document's own guard, so nothing
+written there grants a request that would not otherwise have been offered.
+
+**Drive.** `fires` lets one of your inputs take a component's, so that granting the request
+and acting on it are one decision rather than two states:
+
+```json
+"held":   { "req": { "grant": { "when": false } } },
+
+"inputs": {
+  "fill": {
+    "fires":   [ { "held": "req", "input": "grant" } ],
+    "effects": [ … your own write … ]
+  }
+}
+```
+
+`"when": false` hides `req.grant` so the only route to it is `fill`. The fired input still
+goes through its own guard, so driving one is never a way past a rule this document wrote.
+
+## Where it fits
+
+Anywhere a thing may only happen once somebody said yes. The subject is a string and what it
+means is the holder's business:
+
+| The subject is | and the holder | |
+| --- | --- | --- |
+| a shift | fills it once the request is granted | [the example](example/roster.json) |
+| an environment | deploys to it once the release is approved | |
+| a discount | applies it once it is authorised | |
+| a document | publishes it once review passed | |
+
+**One request is one request.** A component holds one state, so holding this once gives one
+request: several subjects to choose between, one asked for, and the case over when it is
+settled. Two shapes for needing more:
+
+- **`uses` may name it more than once**, under a different `as` each time, and each alias
+  gets a state field of its own. Two independent grants over one subject is four-eyes
+  approval written without a second document
+- **an unbounded number is a case per request**, which is what a component being one state
+  is telling you
+
+**What it deliberately does not carry.** No reason on `deny` — that is presentation, and a
+holder that needs one has its own state. No actor, no timestamps, no audit trail: those are
+facts about a case that outlive the rule set that produced them, and the holder is what knows
+where they go.
 
 ## The three inputs
 
@@ -87,23 +135,62 @@ second case, not a second `raise`. And **`deny` carries no reason** — a reason
 presentation, this document is a gate, and a holder that needs reasons has its own state to
 keep them in.
 
-## Trying it on its own
+## Trying it
+
+Needs [Rulealize.Cli](https://github.com/reny-develop/Rulealize.Cli):
+`dotnet tool install -g Rulealize.Cli`.
+
+**On its own.**
 
 ```sh
 rulealize restore src/Rulealize.RuleSet.Request/ruleset/request.json
-rulealize moves  src/Rulealize.RuleSet.Request/ruleset/request.json --state state/example.json
+rulealize play    src/Rulealize.RuleSet.Request/ruleset/request.json --state state/example.json
 ```
 
 ```
-Rulealize.RuleSet.Request@1.0.0 from 'state/example.json' (ongoing)
-raise(subject: mon-am)
-raise(subject: mon-pm)
-raise(subject: tue-am)
-3 legal inputs, 5 candidates evaluated
+Rulealize.RuleSet.Request@1.0.0 from 'state/example.json'
+Choose by number. 'state' prints the position, 'q' stops.
+
+    1. raise(subject: mon-am)
+    2. raise(subject: mon-pm)
+    3. raise(subject: tue-am)
+>
 ```
 
-Run against `state.initial` instead and there is no legal input, which is the same document
-saying it has not been told what may be requested.
+Run it without `--state` and there is no legal input at all — the same document saying it has
+not been told what may be requested.
+
+**Held.** `--rulesets` says where the documents a composite holds are, so the example resolves
+this one out of the package folder rather than a copy of its own:
+
+```sh
+rulealize restore example/roster.json --rulesets src/Rulealize.RuleSet.Request/ruleset
+rulealize play    example/roster.json --rulesets src/Rulealize.RuleSet.Request/ruleset \
+                  --state example/roster-state.json
+```
+
+```
+    1. req.raise(subject: mon-am)
+    2. req.raise(subject: mon-pm)
+```
+
+Take one, and `fill` is the only move left besides `req.deny` — `req.grant` is hidden, because
+the roster drives it. Take `fill` and the request is granted and the shift filled in one
+transition:
+
+```sh
+rulealize apply example/roster.json "req.raise(subject: mon-am)" \
+  --rulesets src/Rulealize.RuleSet.Request/ruleset --state example/roster-state.json > r1.json
+rulealize apply example/roster.json "fill" \
+  --rulesets src/Rulealize.RuleSet.Request/ruleset --state r1.json
+```
+
+```
+fill applied to 'r1.json' -- terminal (granted)
+```
+
+`apply` writes the state to standard output and everything else to standard error, so redirect
+with `>` and not `2>&1`.
 
 ## Building the package
 
