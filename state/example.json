@@ -1,0 +1,10 @@
+{
+  "$schema": "rulealize/state/v1",
+  "ruleSet": "Rulealize.RuleSet.Request@1.0.0",
+
+  "data": {
+    "subjects": ["mon-am", "mon-pm", "tue-am"],
+    "stage": "draft",
+    "subject": null
+  }
+}
