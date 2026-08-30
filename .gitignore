@@ -364,3 +364,6 @@ FodyWeavers.xsd
 
 # vscode
 .vscode/
+# `rulealize restore` writes the vocabularies a document draws on into this folder.
+# They are fetched from nuget.org on demand and belong to nobody here.
+plugin/
