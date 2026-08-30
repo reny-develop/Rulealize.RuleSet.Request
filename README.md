@@ -19,6 +19,17 @@ One request, raised over something and then granted or denied — a
 
 The identifier is the package identifier, so nothing has to look it up.
 
+**`as` is not optional.** An alias defaults to the identifier and may not contain a `.`, so an
+entry that leaves it out is refused — and the message names a key you did not write:
+
+```
+/uses[0]/as: must be a name without '.', which separates a held rule set from its input.
+```
+
+Write the identifier exactly as the package is published, too. nuget.org treats a package name
+as one string however it is cased; the runtime does not, so `rulealize.ruleset.request` is a
+different rule set and the document that arrives is refused when it compiles.
+
 ## What it is a request *for*
 
 **Not in this document.** `subjects` is state, not schema: the rule set says a request is
